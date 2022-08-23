@@ -1,1 +1,2 @@
-# dohguildaddon
+# Danes of Honor
+Guild Addon
