@@ -1,7 +1,7 @@
-## Interface: 20501
+## Interface: 30400
 ## Title: Danes of Honor Guild Addon 
 ## Author: Aldebaren <Danes of Honor>
-## Version: v1.8
+## Version: v1.9
 ## SavedVariables: DOHGADB
 
 libs\LibStub\LibStub.lua
