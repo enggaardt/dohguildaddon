@@ -9,9 +9,8 @@ table.sort(RecievedBids, function(a, b)
 end)
 
 for k, v in pairs(defaults) do
-    print(k .. " " .. v)
+    print(k .. " " .. tostring(v))
 end
-
 
 function DanesOfHonor:CreateExportString()
     local exportString = '{\"version\":' .. version .. ',\"data\":{'
@@ -21,27 +20,19 @@ function DanesOfHonor:CreateExportString()
             exportString = exportString .. '\"' .. realm .. '\": {'
             for player, data in pairs(players) do
                 exportString = exportString .. '\"' .. player .. '\": {'
-                exportString = exportString .. '\"faction\": \"' ..
-                                   data["faction"] .. '\",'
-                exportString = exportString .. '\"class\": \"' ..
-                                   FixNil(data["class"]) .. '\",'
+                exportString = exportString .. '\"faction\": \"' .. data["faction"] .. '\",'
+                exportString = exportString .. '\"class\": \"' .. FixNil(data["class"]) .. '\",'
 
                 if (data["level"]) then
-                    exportString = exportString .. '\"level\": ' ..
-                                       data["level"] .. ','
+                    exportString = exportString .. '\"level\": ' .. data["level"] .. ','
                 end
 
                 if (data["guildName"]) then
-                    exportString = exportString .. '\"guildName\": \"' ..
-                                       data["guildName"] .. '\",'
-                    exportString = exportString .. '\"guildRankName\": \"' ..
-                                       data["guildRankName"] .. '\",'
-                    exportString = exportString .. '\"guildRankIndex\": ' ..
-                                       data["guildRankIndex"] .. ','
+                    exportString = exportString .. '\"guildName\": \"' .. data["guildName"] .. '\",'
+                    exportString = exportString .. '\"guildRankName\": \"' .. data["guildRankName"] .. '\",'
+                    exportString = exportString .. '\"guildRankIndex\": ' .. data["guildRankIndex"] .. ','
                 end
-                exportString = exportString ..
-                                   DanesOfHonor:TradeskillsToJson(
-                                       data["tradeskills"])
+                exportString = exportString .. DanesOfHonor:TradeskillsToJson(data["tradeskills"])
                 -- other data types here
                 exportString = exportString .. '},'
             end
@@ -66,5 +57,7 @@ function DanesOfHonor:DisplayExportString(exportString)
     DohFrameScrollText:SetText(encoded)
     DohFrameScrollText:HighlightText()
 
-    DohFrameButton:SetScript("OnClick", function(self) DohFrame:Hide() end)
+    DohFrameButton:SetScript("OnClick", function(self)
+        DohFrame:Hide()
+    end)
 end

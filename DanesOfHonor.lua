@@ -12,7 +12,8 @@ DOHGlobals = {
         MAINSPEC = 3,
         DUALSPEC = 4,
         OFFSPEC = 5
-    }
+    },
+    ROSTER = {}
 }
 
 function DanesOfHonor:OnInitialize()
@@ -23,8 +24,27 @@ function DanesOfHonor:OnInitialize()
     DanesOfHonor:RegisterComm(DOHGlobals.COMMPREFIX)
     DanesOfHonor:RegisterChatCommand('doh', 'HandleChatCommand')
     DanesOfHonor:RegisterEvent("CHAT_MSG_SYSTEM")
+    DanesOfHonor:RegisterEvent("RAID_ROSTER_UPDATE")
+    DanesOfHonor:RegisterEvent("GROUP_ROSTER_UPDATE")
 
     DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000Danes|r |cAAFFFFFFof|r |cAAFF0000Honor|r guild addon loaded!")
+end
+
+function DanesOfHonor:RAID_ROSTER_UPDATE()
+    DanesOfHonor:GROUP_ROSTER_UPDATE("GROUP_ROSTER_UPDATE")
+end
+
+function DanesOfHonor:GROUP_ROSTER_UPDATE(event)
+    for i = 1, MAX_RAID_MEMBERS do
+        name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(i);
+        if (name) then
+            DOHGlobals.ROSTER[name] = {
+                isML = isML,
+                class = class,
+                points = DanesOfHonor:GetPlayerPoints(name)
+            }
+        end
+    end
 end
 
 function DanesOfHonor:CHAT_MSG_SYSTEM(event, message)
@@ -103,8 +123,42 @@ function DanesOfHonor:HandleRoll(name, roll, min, max)
     bidsFrameAddBid(name, bidType, bid, roll)
 end
 
-function DanesOfHonor:GetPlayerPoints(name)
-    return 299;
+function DanesOfHonor:GetPlayerPoints(nameToFind)
+    local normalizedRealm = "-" .. GetNormalizedRealmName()
+    local numTotalGuildMembers = GetNumGuildMembers()
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "")
+            if (n == nameToFind) then
+                points = tonumber(officernote)
+                if (not points) then
+                    points = 0
+                end
+                return points
+            end
+        end
+    end
+    return 0;
+end
+
+function DanesOfHonor:AjustPoints(memberName, numberOfPoints)
+    local normalizedRealm = "-" .. GetNormalizedRealmName()
+    local numTotalGuildMembers = GetNumGuildMembers()
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "")
+            if (n == memberName) then
+                local currentPoints = tonumber(officernote)
+                if (not currentPoints) then
+                    currentPoints = 0
+                end
+                local updatedPoints = currentPoints + numberOfPoints
+                GuildRosterSetOfficerNote(i, updatedPoints)
+            end
+        end
+    end
 end
 
 function DanesOfHonor:PrintRollHelp()
