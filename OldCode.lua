@@ -1,3 +1,18 @@
+table.sort(RecievedBids, function(a, b)
+    if (a.bidType < b.bidType) then
+        return true
+    elseif (a.bidType > b.bidType) then
+        return false
+    else
+        return a.bid > b.bid
+    end
+end)
+
+for k, v in pairs(defaults) do
+    print(k .. " " .. v)
+end
+
+
 function DanesOfHonor:CreateExportString()
     local exportString = '{\"version\":' .. version .. ',\"data\":{'
 
