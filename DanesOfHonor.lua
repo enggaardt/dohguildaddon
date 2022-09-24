@@ -13,12 +13,19 @@ DOHGlobals = {
         DUALSPEC = 4,
         OFFSPEC = 5
     },
-    ROSTER = {}
+    UPDATE = {
+        NONE = 0,
+        READ = 1,
+        WRITE = 2
+    }
 }
 
 function DanesOfHonor:OnInitialize()
-    if (DOHGADB == nil) then
+    if not (DOHGADB) then
         DOHGADB = {}
+    end
+    if (not DOHGADB.ROSTER) then
+        DOHGADB.ROSTER = {}
     end
 
     DanesOfHonor:RegisterComm(DOHGlobals.COMMPREFIX)
@@ -38,12 +45,52 @@ function DanesOfHonor:GROUP_ROSTER_UPDATE(event)
     for i = 1, MAX_RAID_MEMBERS do
         name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(i);
         if (name) then
-            DOHGlobals.ROSTER[name] = {
-                isML = isML,
-                class = class,
-                points = DanesOfHonor:GetPlayerPoints(name)
-            }
+            if (not DOHGADB.ROSTER[name]) then
+                DOHGADB.ROSTER[name] = {
+                    points = 0,
+                    state = DOHGlobals.UPDATE.READ,
+                    class = class
+                }
+            end
+            DOHGADB.ROSTER[name].isML = isML
         end
+    end
+end
+
+-- /script DanesOfHonor:ProcessRoster() 
+function DanesOfHonor:ProcessRoster()
+    local normalizedRealm = "-" .. GetNormalizedRealmName()
+    local numTotalGuildMembers = GetNumGuildMembers()
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "")
+            if (DOHGADB.ROSTER[n]) then
+                if (DOHGADB.ROSTER[n].state == DOHGlobals.UPDATE.READ) then
+                    DOHGADB.ROSTER[n].points = tonumber(officernote)
+                    if (not DOHGADB.ROSTER[n].points) then
+                        DOHGADB.ROSTER[n].points = 0
+                    end
+                elseif (DOHGADB.ROSTER[n].state == DOHGlobals.UPDATE.WRITE) then
+                    if (CanEditOfficerNote()) then
+                        GuildRosterSetOfficerNote(i, DOHGADB.ROSTER[n].points)
+                    end
+                end
+                DOHGADB.ROSTER[n].state = DOHGlobals.UPDATE.NONE
+            end
+        end
+    end
+end
+
+-- /script DanesOfHonor:PrintRoster()
+function DanesOfHonor:PrintRoster()
+    print("ROSTER:")
+    for name, data in pairs(DOHGADB.ROSTER) do
+        local s = name;
+        for k, v in pairs(DOHGADB.ROSTER[name]) do
+            s = s .. string.format(" (%s => %s)", k, tostring(v))
+        end
+        print(s)
     end
 end
 
@@ -123,42 +170,11 @@ function DanesOfHonor:HandleRoll(name, roll, min, max)
     bidsFrameAddBid(name, bidType, bid, roll)
 end
 
-function DanesOfHonor:GetPlayerPoints(nameToFind)
-    local normalizedRealm = "-" .. GetNormalizedRealmName()
-    local numTotalGuildMembers = GetNumGuildMembers()
-    for i = 1, numTotalGuildMembers do
-        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
-        if (name) then
-            local n = name:gsub(normalizedRealm, "")
-            if (n == nameToFind) then
-                points = tonumber(officernote)
-                if (not points) then
-                    points = 0
-                end
-                return points
-            end
-        end
-    end
-    return 0;
-end
+
 
 function DanesOfHonor:AjustPoints(memberName, numberOfPoints)
-    local normalizedRealm = "-" .. GetNormalizedRealmName()
-    local numTotalGuildMembers = GetNumGuildMembers()
-    for i = 1, numTotalGuildMembers do
-        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
-        if (name) then
-            local n = name:gsub(normalizedRealm, "")
-            if (n == memberName) then
-                local currentPoints = tonumber(officernote)
-                if (not currentPoints) then
-                    currentPoints = 0
-                end
-                local updatedPoints = currentPoints + numberOfPoints
-                GuildRosterSetOfficerNote(i, updatedPoints)
-            end
-        end
-    end
+    DOHGADB.ROSTER[memberName].points = DOHGADB.ROSTER[memberName].points + numberOfPoints
+    DOHGADB.ROSTER[memberName].state = DOHGlobals.UPDATE.WRITE
 end
 
 function DanesOfHonor:PrintRollHelp()
