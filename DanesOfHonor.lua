@@ -7,6 +7,7 @@ DOHGlobals = {
     COMMPREFIX = "DOHGA",
     AUCTIONINPROGRESS = false,
     MINIMUMBID = 100,
+    BIDTIMER = 20,
     BIDTYPES = {
         BIDHALF = 1,
         BIDMIN = 2,
@@ -53,7 +54,6 @@ function DanesOfHonor:RAID_ROSTER_UPDATE(event)
 end
 
 function DanesOfHonor:GROUP_ROSTER_UPDATE(event)
-    print(string.format("UPDATE ROSTER: %s", event))
     for i = 1, MAX_RAID_MEMBERS do
         name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(i);
         if (name) then
@@ -119,7 +119,6 @@ function DanesOfHonor:HandleChatCommand(input)
         local _, itemLink = DanesOfHonor:GetArgs(input, 2);
         if (itemLink) then
             DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
-            print("handle chat command " .. itemLink)
         else
             DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
         end
@@ -133,18 +132,18 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
             if (command == "start") then
                 if (arg1) then
                     DOHGlobals.AUCTIONINPROGRESS = true;
-                    IncomingBidsWindow.SetItemLink(arg1)
-                    IncomingBidsWindow:Show()
-
-                    --     biddingFrameShow(arg1)
-                    print(sender .. " started a bid for " .. arg1)
+                    IncomingBidsWindow.StartAuction(arg1)
+                    BidWindow.StartAuction(arg1)
                 end
             elseif (command == "bid") then
                 if (arg1 == "half") then
-                    local points = DanesOfHonor:GetPlayerPoints(sender);
-                    local halfPoints = math.ceil(points / 2)
-                    bidsFrameAddBid(sender, DOHGlobals.BIDTYPES.BIDHALF, halfPoints, 0)
-                    print(sender .. " bid half his/her points (" .. halfPoints .. ")")
+                    local currentPoints = DOHGADB.ROSTER[sender].points
+                    local halfPoints = math.ceil(currentPoints / 2)
+                    if (halfPoints > DOHGlobals.MINIMUMBID) then
+                        IncomingBidsWindow.AddBid(sender, DOHGlobals.BIDTYPES.BIDHALF, halfPoints, 0)
+                    else
+                        DanesOfHonor:PrintRollHelp()
+                    end
                 end
             end
         end
@@ -164,24 +163,21 @@ function DanesOfHonor:HandleRoll(name, roll, min, max)
     local bidType = DOHGlobals.BIDTYPES.OFFSPEC
     local bid = 0;
     if (max == 100) then
-        bidType = DOHGlobals.BIDTYPES.BIDMIN
-        bid = DOHGlobals.MINIMUMBID
-        print(name .. " bid the minimum points (" .. bid .. ")")
+        local currentPoints = DOHGADB.ROSTER[name].points
+        if (currentPoints >= DOHGlobals.MINIMUMBID) then
+            IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.BIDMIN, DOHGlobals.MINIMUMBID, roll)
+        else
+            DanesOfHonor:PrintRollHelp()
+        end
     elseif (max == 99) then
-        bidType = DOHGlobals.BIDTYPES.MAINSPEC
-        print(name .. " rolled " .. roll .. " as MAINSPEC")
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.MAINSPEC, 0, roll)
     elseif (max == 98) then
-        bidType = DOHGlobals.BIDTYPES.DUALSPEC
-        print(name .. " rolled " .. roll .. " as DUALSPEC")
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.DUALSPEC, 0, roll)
     elseif (max == 97) then
-        bidType = DOHGlobals.BIDTYPES.OFFSPEC
-        print(name .. " rolled " .. roll .. " as OFFSPEC")
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.OFFSPEC, 0, roll)
     else
         DanesOfHonor:PrintRollHelp()
-        return
     end
-
-    bidsFrameAddBid(name, bidType, bid, roll)
 end
 
 function DanesOfHonor:AjustPoints(memberName, numberOfPoints)
@@ -197,6 +193,125 @@ function DanesOfHonor:PrintRollHelp()
                                       "|cAAFF0000*|r To roll for dualspec: /roll 98\n" ..
                                       "|cAAFF0000*|r To roll for offspec: /roll 97")
 end
+
+function CreateBidWindow()
+    local frameWidth = 400
+    local buttonWidth = (frameWidth - 25) / 5
+    local buttonHeight = 40
+
+    f = AceGUI:Create("Window")
+    f:SetCallback("OnClose", function(widget)
+        widget:Hide()
+    end)
+    f:SetTitle("Danes of Honor")
+    f:SetLayout("Flow")
+    f:EnableResize(false)
+    f:SetWidth(frameWidth)
+    f:SetHeight(160)
+
+    -- Create Item Container --
+    local itemContainer = AceGUI:Create("InlineGroup")
+    itemContainer:SetLayout("Fill")
+    itemContainer:SetWidth(frameWidth)
+    itemContainer:SetHeight(35)
+
+    -- Create Item Link
+    local item = AceGUI:Create("InteractiveLabel")
+    item:SetFontObject(GameFontNormalLarge)
+    f.StartAuction = function(itemLink)
+        item:SetText(itemLink)
+        item:SetCallback("OnClick", function()
+            SetItemRef(itemLink)
+        end)
+        BidWindow:Show()
+    end
+    itemContainer:AddChild(item)
+
+    local halfBidButton = AceGUI:Create("Button")
+    halfBidButton:SetWidth(buttonWidth)
+    halfBidButton:SetHeight(buttonHeight)
+    halfBidButton:SetCallback("OnClick", function()
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction bid half", "RAID")
+        BidWindow:Hide()
+    end)
+
+    local minimumBidButton = AceGUI:Create("Button")
+    minimumBidButton:SetWidth(buttonWidth)
+    minimumBidButton:SetHeight(buttonHeight)
+    minimumBidButton:SetCallback("OnClick", function()
+        RandomRoll(1, 100)
+        BidWindow:Hide()
+    end)
+
+    local mainSpecButton = AceGUI:Create("Button")
+    mainSpecButton:SetWidth(buttonWidth)
+    mainSpecButton:SetHeight(buttonHeight)
+    mainSpecButton:SetText("Main Spec")
+    mainSpecButton:SetCallback("OnClick", function()
+        RandomRoll(1, 99)
+        BidWindow:Hide()
+    end)
+
+    local dualSpecButton = AceGUI:Create("Button")
+    dualSpecButton:SetWidth(buttonWidth)
+    dualSpecButton:SetHeight(buttonHeight)
+    dualSpecButton:SetText("Dual Spec")
+    dualSpecButton:SetCallback("OnClick", function()
+        RandomRoll(1, 98)
+        BidWindow:Hide()
+    end)
+
+    local offSpecButton = AceGUI:Create("Button")
+    offSpecButton:SetWidth(buttonWidth)
+    offSpecButton:SetHeight(buttonHeight)
+    offSpecButton:SetText("Off Spec")
+    offSpecButton:SetCallback("OnClick", function()
+        RandomRoll(1, 97)
+        BidWindow:Hide()
+    end)
+
+    -- Add the button to the container
+    f:AddChild(itemContainer)
+    f:AddChild(halfBidButton)
+    f:AddChild(minimumBidButton)
+    f:AddChild(mainSpecButton)
+    f:AddChild(dualSpecButton)
+    f:AddChild(offSpecButton)
+
+    local deadline = 0
+    f:SetCallback("OnShow", function(widget)
+        deadline = GetTime() + DOHGlobals.BIDTIMER
+        local currentPoints = DOHGADB.ROSTER[UnitName("PLAYER")].points
+        local halfPoints = math.ceil(currentPoints / 2);
+
+        halfBidButton:SetText(string.format("BID %d", halfPoints))
+        halfBidButton:SetDisabled(halfPoints <= DOHGlobals.MINIMUMBID);
+
+        minimumBidButton:SetText(string.format("BID %d", DOHGlobals.MINIMUMBID))
+        minimumBidButton:SetDisabled(currentPoints < DOHGlobals.MINIMUMBID);
+    end)
+
+    local updateInterval = 0.1
+    local lastUpdate = 0
+
+    --[[    f:SetCallback("OnUpdate", function(self, elapsed)
+        lastUpdate = lastUpdate + elapsed
+        if (lastUpdate > updateInterval) then
+            local timeRemaining = math.ceil(deadline - GetTime())
+            if (timeRemaining < 0) then
+                timeRemaining = 0
+                f:Hide()
+            end
+            f:SetTitle(string.format("Danes of Honor (%d)", timeRemaining))
+            print(string.format("Danes of Honor (%d)", timeRemaining))
+            lastUpdate = 0
+        end
+    end)
+]]
+    f:Hide();
+    return f;
+end
+BidWindow = CreateBidWindow()
 
 function CreateIncomingBidsWindow()
     f = AceGUI:Create("Window")
@@ -220,21 +335,59 @@ function CreateIncomingBidsWindow()
     itemContainer:AddChild(item)
     f:AddChild(itemContainer)
 
-    f.SetItemLink = function(itemLink)
+    local bidders = {}
+    local bids = {}
+    f.StartAuction = function(itemLink)
+        bidders = {}
+        bids = {}
         item:SetText(itemLink)
         item:SetCallback("OnClick", function()
             SetItemRef(itemLink)
         end)
+        IncomingBidsWindow:Show()
     end
 
     local headerLabel = AceGUI:Create("Label")
     headerLabel:SetText("Recieved bids:")
-    headerLabel:SetLayout("Fill")
     f:AddChild(headerLabel)
 
     f:SetCallback("OnShow", function(e)
-        print("show incoming bids windows")
     end)
+
+    f.AddBid = function(name, bidType, bid, roll)
+        if (bidders[name]) then
+            print(string.format(" - %s already did a bid", name))
+            return
+        end
+
+        bidders[name] = true;
+        table.insert(bids, {
+            name = name,
+            bid = bid,
+            roll = roll,
+            bidType = bidType
+        })
+
+        table.sort(bids, function(a, b)
+            if (a.bidType < b.bidType) then
+                return true
+            elseif (a.bidType > b.bidType) then
+                return false;
+            else
+                if (a.bid > b.bid) then
+                    return true
+                elseif (a.bid < b.bid) then
+                    return false
+                else
+                    return a.roll > b.roll
+                end
+            end
+        end)
+
+        for k, v in pairs(bids) do
+            print(string.format("%d - %s bid %d points (%d) as %d", k, v.name, v.bid, v.roll, v.bidType))
+        end
+    end
 
     f:Hide();
 
