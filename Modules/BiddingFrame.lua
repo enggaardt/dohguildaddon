@@ -4,7 +4,7 @@ local f
 function biddingFrameShow(itemLink)
     -- Create a container frame
 
-    local currentPoints = DanesOfHonor:GetPlayerPoints(UnitName("PLAYER"));
+    local currentPoints = 0 -- DanesOfHonor:GetPlayerPoints(UnitName("PLAYER"));
     local halfPoints = math.ceil(currentPoints / 2);
 
     f = BiddingFrame:Create("Window")

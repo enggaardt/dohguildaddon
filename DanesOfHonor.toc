@@ -28,9 +28,9 @@ Libs\AceSerializer-3.0\AceSerializer-3.0.xml
 # Utils\B64Encoder.lua
 Utils\Utils.lua
 
+# Addon Core
+DanesOfHonor.lua
+
 # Modules
 Modules\BidsFrame.lua
 Modules\BiddingFrame.lua
-
-# Addon Core
-DanesOfHonor.lua
