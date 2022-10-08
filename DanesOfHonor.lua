@@ -1,6 +1,7 @@
 -- To get detailed error messages ingame 
 -- /console scriptErrors 1
-DanesOfHonor = LibStub("AceAddon-3.0"):NewAddon("DanesOfHonor", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0")
+DanesOfHonor = LibStub("AceAddon-3.0"):NewAddon("DanesOfHonor", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0",
+    "AceTimer-3.0")
 local AceGUI = LibStub("AceGUI-3.0")
 
 DOHGlobals = {
@@ -20,6 +21,7 @@ DOHGlobals = {
         READ = 1,
         WRITE = 2
     }
+
 }
 
 function DanesOfHonor:OnInitialize()
@@ -28,6 +30,9 @@ function DanesOfHonor:OnInitialize()
     end
     if (not DOHGADB.ROSTER) then
         DOHGADB.ROSTER = {}
+    end
+    if (not DOHGADB.DUALSPEC) then
+        DOHGADB.DUALSPEC = {}
     end
 
     DanesOfHonor:RegisterComm(DOHGlobals.COMMPREFIX)
@@ -96,13 +101,13 @@ end
 
 -- /script DanesOfHonor:PrintRoster()
 function DanesOfHonor:PrintRoster()
-    print("ROSTER:")
+  --  print("ROSTER:")
     for name, data in pairs(DOHGADB.ROSTER) do
         local s = name;
         for k, v in pairs(DOHGADB.ROSTER[name]) do
             s = s .. string.format(" (%s => %s)", k, tostring(v))
         end
-        print(s)
+    --    print(s)
     end
 end
 
@@ -116,11 +121,34 @@ end
 function DanesOfHonor:HandleChatCommand(input)
     local command = string.lower(FixNil(DanesOfHonor:GetArgs(input)))
     if (command == "auction") then
-        local _, itemLink = DanesOfHonor:GetArgs(input, 2);
-        if (itemLink) then
-            DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
+        if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+            local _, itemLink = DanesOfHonor:GetArgs(input, 2);
+            if (itemLink) then
+                DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
+            end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
+            DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: Only the master looter can start an auction!")
+        end
+    elseif (command == "bid") then
+        if (not DOHGlobals.AUCTIONINPROGRESS) then
+            DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: There are no active auctions!")
+            return
+        end
+
+        local _, value = DanesOfHonor:GetArgs(input, 2);
+        if (value == "half") then
+            local currentPoints = DOHGADB.ROSTER[UnitName("PLAYER")].points
+            local halfPoints = math.ceil(currentPoints / 2)
+            if (halfPoints > DOHGlobals.MINIMUMBID) then
+                DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction bid half", "RAID")
+                BidWindow:Hide()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: You do not have enough points for this bid!")
+            end
+        else
+            DanesOfHonor:PrintRollHelp()
         end
     end
 end
@@ -131,9 +159,10 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
         if (action == "auction") then
             if (command == "start") then
                 if (arg1) then
-                    DOHGlobals.AUCTIONINPROGRESS = true;
-                    IncomingBidsWindow.StartAuction(arg1)
                     BidWindow.StartAuction(arg1)
+                    if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+                        IncomingBidsWindow.StartAuction(arg1)
+                    end
                 end
             elseif (command == "bid") then
                 if (arg1 == "half") then
@@ -141,10 +170,14 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
                     local halfPoints = math.ceil(currentPoints / 2)
                     if (halfPoints > DOHGlobals.MINIMUMBID) then
                         IncomingBidsWindow.AddBid(sender, DOHGlobals.BIDTYPES.BIDHALF, halfPoints, 0)
-                    else
-                        DanesOfHonor:PrintRollHelp()
                     end
                 end
+            elseif (command == "cleardualspec") then
+                DOHGADB.DUALSPEC = {}
+            elseif (command == "adddualspec") then
+                DOHGADB.DUALSPEC[arg1] = true
+            elseif (command == "removedualspec") then
+                DOHGADB.DUALSPEC[arg1] = false
             end
         end
     end
@@ -212,13 +245,19 @@ function CreateBidWindow()
     -- Create Item Container --
     local itemContainer = AceGUI:Create("InlineGroup")
     itemContainer:SetLayout("Fill")
-    itemContainer:SetWidth(frameWidth)
+    itemContainer:SetWidth(frameWidth - buttonWidth)
     itemContainer:SetHeight(35)
+
+    local countDown = AceGUI:Create("Label")
+    countDown:SetText(DOHGlobals.BIDTIMER)
+    countDown:SetWidth(buttonWidth * 0.5)
+    countDown:SetFontObject(GameFontNormalLarge)
 
     -- Create Item Link
     local item = AceGUI:Create("InteractiveLabel")
     item:SetFontObject(GameFontNormalLarge)
     f.StartAuction = function(itemLink)
+        DOHGlobals.AUCTIONINPROGRESS = true;
         item:SetText(itemLink)
         item:SetCallback("OnClick", function()
             SetItemRef(itemLink)
@@ -272,42 +311,40 @@ function CreateBidWindow()
 
     -- Add the button to the container
     f:AddChild(itemContainer)
+    f:AddChild(countDown)
     f:AddChild(halfBidButton)
     f:AddChild(minimumBidButton)
     f:AddChild(mainSpecButton)
     f:AddChild(dualSpecButton)
     f:AddChild(offSpecButton)
 
-    local deadline = 0
+    local bidTimerID = nil
+    local bidTimeLeft = 0
     f:SetCallback("OnShow", function(widget)
         deadline = GetTime() + DOHGlobals.BIDTIMER
         local currentPoints = DOHGADB.ROSTER[UnitName("PLAYER")].points
         local halfPoints = math.ceil(currentPoints / 2);
 
-        halfBidButton:SetText(string.format("BID %d", halfPoints))
+        halfBidButton:SetText(string.format("HALF (%d)", halfPoints))
         halfBidButton:SetDisabled(halfPoints <= DOHGlobals.MINIMUMBID);
 
-        minimumBidButton:SetText(string.format("BID %d", DOHGlobals.MINIMUMBID))
+        minimumBidButton:SetText(string.format("FIXED (%d)", DOHGlobals.MINIMUMBID))
         minimumBidButton:SetDisabled(currentPoints < DOHGlobals.MINIMUMBID);
-    end)
 
-    local updateInterval = 0.1
-    local lastUpdate = 0
+        dualSpecButton:SetDisabled(DOHGADB.DUALSPEC[not UnitName("PLAYER")])
 
-    --[[    f:SetCallback("OnUpdate", function(self, elapsed)
-        lastUpdate = lastUpdate + elapsed
-        if (lastUpdate > updateInterval) then
-            local timeRemaining = math.ceil(deadline - GetTime())
-            if (timeRemaining < 0) then
-                timeRemaining = 0
-                f:Hide()
+        bidTimeLeft = DOHGlobals.BIDTIMER
+        bidTimerID = DanesOfHonor:ScheduleRepeatingTimer(function()
+            bidTimeLeft = bidTimeLeft - 1
+            countDown:SetText(tostring(bidTimeLeft))
+            if (bidTimeLeft <= 0) then
+                DanesOfHonor:CancelTimer(bidTimerID)
+                BidWindow:Hide()
+                DOHGlobals.AUCTIONINPROGRESS = false;
             end
-            f:SetTitle(string.format("Danes of Honor (%d)", timeRemaining))
-            print(string.format("Danes of Honor (%d)", timeRemaining))
-            lastUpdate = 0
-        end
+        end, 1)
     end)
-]]
+
     f:Hide();
     return f;
 end
@@ -356,7 +393,7 @@ function CreateIncomingBidsWindow()
 
     f.AddBid = function(name, bidType, bid, roll)
         if (bidders[name]) then
-            print(string.format(" - %s already did a bid", name))
+      --      print(string.format(" - %s already did a bid", name))
             return
         end
 
@@ -385,7 +422,7 @@ function CreateIncomingBidsWindow()
         end)
 
         for k, v in pairs(bids) do
-            print(string.format("%d - %s bid %d points (%d) as %d", k, v.name, v.bid, v.roll, v.bidType))
+     --       print(string.format("%d - %s bid %d points (%d) as %d", k, v.name, v.bid, v.roll, v.bidType))
         end
     end
 
