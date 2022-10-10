@@ -8,20 +8,28 @@ DOHGlobals = {
     COMMPREFIX = "DOHGA",
     AUCTIONINPROGRESS = false,
     MINIMUMBID = 100,
-    BIDTIMER = 20,
+    BIDTIMER = 60,
     BIDTYPES = {
         BIDHALF = 1,
+        [1] = "HALF",
         BIDMIN = 2,
+        [2] = "FIXED",
         MAINSPEC = 3,
+        [3] = "MAINSPEC",
         DUALSPEC = 4,
-        OFFSPEC = 5
+        [4] = "DUALSPEC",
+        OFFSPEC = 5,
+        [5] = "OFFSPEC"
     },
     UPDATE = {
         NONE = 0,
         READ = 1,
         WRITE = 2
-    }
-
+    },
+    BIDHELPMESSAGES = {"|cAAFF0000*|r To bid half your points: /doh bid half",
+                       "|cAAFF0000*|r To bid the fixed price (100 points): /roll 100",
+                       "|cAAFF0000*|r To roll for mainspec: /roll 99", "|cAAFF0000*|r To roll for dualspec: /roll 98",
+                       "|cAAFF0000*|r To roll for offspec: /roll 97"}
 }
 
 function DanesOfHonor:OnInitialize()
@@ -47,11 +55,6 @@ end
 
 function DanesOfHonor:PARTY_LOOT_METHOD_CHANGED(event)
     DanesOfHonor:GROUP_ROSTER_UPDATE(event)
-    if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
-        MasterLooterWindow:Show();
-    else
-        MasterLooterWindow:Hide();
-    end
 end
 
 function DanesOfHonor:RAID_ROSTER_UPDATE(event)
@@ -72,6 +75,7 @@ function DanesOfHonor:GROUP_ROSTER_UPDATE(event)
             DOHGADB.ROSTER[name].isML = isML
         end
     end
+    DanesOfHonor:ProcessRoster()
 end
 
 -- /script DanesOfHonor:ProcessRoster() 
@@ -101,13 +105,13 @@ end
 
 -- /script DanesOfHonor:PrintRoster()
 function DanesOfHonor:PrintRoster()
-  --  print("ROSTER:")
+    --  print("ROSTER:")
     for name, data in pairs(DOHGADB.ROSTER) do
         local s = name;
         for k, v in pairs(DOHGADB.ROSTER[name]) do
             s = s .. string.format(" (%s => %s)", k, tostring(v))
         end
-    --    print(s)
+        --    print(s)
     end
 end
 
@@ -125,6 +129,11 @@ function DanesOfHonor:HandleChatCommand(input)
             local _, itemLink = DanesOfHonor:GetArgs(input, 2);
             if (itemLink) then
                 DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
+                SendChatMessage(string.format("%s started an aution for %s!", UnitName("PLAYER"), itemLink),
+                    "RAID_WARNING")
+                for _, m in pairs(DOHGlobals.BIDHELPMESSAGES) do
+                    SendChatMessage(m, "RAID")
+                end
             else
                 DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
             end
@@ -149,6 +158,14 @@ function DanesOfHonor:HandleChatCommand(input)
             end
         else
             DanesOfHonor:PrintRollHelp()
+        end
+    elseif (command == "ml") then
+        if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+            if (MasterLooterWindow:IsVisible()) then
+                MasterLooterWindow:Hide();
+            else
+                MasterLooterWindow:Show();
+            end
         end
     end
 end
@@ -220,11 +237,7 @@ end
 
 function DanesOfHonor:PrintRollHelp()
     DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000Danes|r |cAAFFFFFFof|r |cAAFF0000Honor|r guild addon!\n" ..
-                                      "|cAAFF0000*|r To bid half your points: /doh bid half\n" ..
-                                      "|cAAFF0000*|r To bid the fixed price (100 points): /roll 100\n" ..
-                                      "|cAAFF0000*|r To roll for mainspec: /roll 99\n" ..
-                                      "|cAAFF0000*|r To roll for dualspec: /roll 98\n" ..
-                                      "|cAAFF0000*|r To roll for offspec: /roll 97")
+                                      table.concat(DOHGlobals.BIDHELPMESSAGES, "\n"));
 end
 
 function CreateBidWindow()
@@ -358,8 +371,8 @@ function CreateIncomingBidsWindow()
     f:SetTitle("DoH Incoming Bids")
     f:SetLayout("Flow")
     f:EnableResize(false)
-    f:SetWidth(300)
-    f:SetHeight(150)
+    f:SetWidth(350)
+    f:SetHeight(275)
 
     local itemContainer = AceGUI:Create("InlineGroup")
     itemContainer:SetLayout("Fill")
@@ -374,15 +387,6 @@ function CreateIncomingBidsWindow()
 
     local bidders = {}
     local bids = {}
-    f.StartAuction = function(itemLink)
-        bidders = {}
-        bids = {}
-        item:SetText(itemLink)
-        item:SetCallback("OnClick", function()
-            SetItemRef(itemLink)
-        end)
-        IncomingBidsWindow:Show()
-    end
 
     local headerLabel = AceGUI:Create("Label")
     headerLabel:SetText("Recieved bids:")
@@ -391,9 +395,35 @@ function CreateIncomingBidsWindow()
     f:SetCallback("OnShow", function(e)
     end)
 
+    local scrollContainer = AceGUI:Create("ScrollFrame");
+    scrollContainer:SetLayout("Flow")
+    scrollContainer:SetFullWidth(true);
+    scrollContainer:SetHeight(300);
+
+    local scrollContent = AceGUI:Create("MultiLineEditBox");
+    scrollContent:SetFullWidth(true);
+    scrollContent:SetNumLines(10);
+    scrollContent:DisableButton(true);
+    scrollContent:SetLabel("");
+    scrollContent:SetDisabled(true);
+
+    scrollContainer:AddChild(scrollContent);
+    f:AddChild(scrollContainer);
+
+    f.StartAuction = function(itemLink)
+        bidders = {}
+        bids = {}
+        item:SetText(itemLink)
+        item:SetCallback("OnClick", function()
+            SetItemRef(itemLink)
+        end)
+        scrollContent:SetText("");
+        IncomingBidsWindow:Show()
+    end
+
     f.AddBid = function(name, bidType, bid, roll)
         if (bidders[name]) then
-      --      print(string.format(" - %s already did a bid", name))
+            --      print(string.format(" - %s already did a bid", name))
             return
         end
 
@@ -421,9 +451,15 @@ function CreateIncomingBidsWindow()
             end
         end)
 
+        local bidsString = "";
         for k, v in pairs(bids) do
-     --       print(string.format("%d - %s bid %d points (%d) as %d", k, v.name, v.bid, v.roll, v.bidType))
+            bidsString = bidsString ..
+                             (string.format("%d - %s bid %d points (%d) as %s\n", k, v.name, v.bid, v.roll,
+                    DOHGlobals.BIDTYPES[v.bidType]))
         end
+
+        scrollContent:SetText(bidsString);
+
     end
 
     f:Hide();
@@ -442,8 +478,20 @@ function CreateMasterLooterWindow()
     f:EnableResize(false)
     f:SetWidth(300)
     f:SetHeight(150)
-    f:Hide()
+    --  f:Hide()
 
+    local awardRaidPointsButton = AceGUI:Create("Button");
+    awardRaidPointsButton:SetFullWidth(true);
+    awardRaidPointsButton:SetText(string.format("Award %d points to raid", DOHGlobals.MINIMUMBID))
+    awardRaidPointsButton:SetCallback("OnClick", function()
+        for name, data in pairs(DOHGADB.ROSTER) do
+            data.points = data.points + DOHGlobals.MINIMUMBID;
+            data.state = DOHGlobals.UPDATE.WRITE;
+        end
+        DanesOfHonor:ProcessRoster()
+        SendChatMessage(string.format("%s awarded %d points to raid!", UnitName("PLAYER"), DOHGlobals.MINIMUMBID));
+    end)
+    f:AddChild(awardRaidPointsButton);
     return f;
 end
 MasterLooterWindow = CreateMasterLooterWindow()
