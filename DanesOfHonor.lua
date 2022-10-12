@@ -8,7 +8,7 @@ DOHGlobals = {
     COMMPREFIX = "DOHGA",
     AUCTIONINPROGRESS = false,
     MINIMUMBID = 100,
-    BIDTIMER = 60,
+    BIDTIMER = 20,
     BIDTYPES = {
         BIDHALF = 1,
         [1] = "HALF",
@@ -49,8 +49,35 @@ function DanesOfHonor:OnInitialize()
     DanesOfHonor:RegisterEvent("RAID_ROSTER_UPDATE")
     DanesOfHonor:RegisterEvent("GROUP_ROSTER_UPDATE")
     DanesOfHonor:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
+    DanesOfHonor:RegisterEvent("PLAYER_LOGOUT")
 
     DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000Danes|r |cAAFFFFFFof|r |cAAFF0000Honor|r guild addon loaded!")
+end
+
+function DanesOfHonor:PLAYER_LOGOUT(...)
+    local guildRoster = {};
+    local normalizedRealm = "-" .. GetNormalizedRealmName();
+    local numTotalGuildMembers = GetNumGuildMembers();
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "");
+
+            tinsert(guildRoster, {
+                fullName = name,
+                name = n,
+                rank = rank,
+                rankIndex = rankIndex,
+                level = level,
+                class = class,
+                note = note,
+                officerNote = officernote
+            });
+
+        end
+    end
+
+    DOHGADB.GuildRoster = guildRoster;
 end
 
 function DanesOfHonor:PARTY_LOOT_METHOD_CHANGED(event)
@@ -69,7 +96,8 @@ function DanesOfHonor:GROUP_ROSTER_UPDATE(event)
                 DOHGADB.ROSTER[name] = {
                     points = 0,
                     state = DOHGlobals.UPDATE.READ,
-                    class = class
+                    class = class,
+                    plusOne = 0
                 }
             end
             DOHGADB.ROSTER[name].isML = isML
@@ -344,7 +372,7 @@ function CreateBidWindow()
         minimumBidButton:SetText(string.format("FIXED (%d)", DOHGlobals.MINIMUMBID))
         minimumBidButton:SetDisabled(currentPoints < DOHGlobals.MINIMUMBID);
 
-        dualSpecButton:SetDisabled(DOHGADB.DUALSPEC[not UnitName("PLAYER")])
+        dualSpecButton:SetDisabled(not DOHGADB.DUALSPEC[UnitName("PLAYER")])
 
         bidTimeLeft = DOHGlobals.BIDTIMER
         bidTimerID = DanesOfHonor:ScheduleRepeatingTimer(function()
@@ -427,12 +455,22 @@ function CreateIncomingBidsWindow()
             return
         end
 
+        if (bidType == DOHGlobals.BIDTYPES.DUALSPEC) then
+            if (not DOHGADB.DUALSPEC[name]) then
+                SendChatMessage(
+                    "You are not on the dual spec allow list. Bid ignored! To bid for offspec type /roll 97", "WHISPER",
+                    "Common", name);
+                return;
+            end
+        end
+
         bidders[name] = true;
         table.insert(bids, {
             name = name,
             bid = bid,
             roll = roll,
-            bidType = bidType
+            bidType = bidType,
+            plusOne = DOHGADB.ROSTER[dsName].plusOne or 0
         })
 
         table.sort(bids, function(a, b)
@@ -441,21 +479,31 @@ function CreateIncomingBidsWindow()
             elseif (a.bidType > b.bidType) then
                 return false;
             else
-                if (a.bid > b.bid) then
-                    return true
-                elseif (a.bid < b.bid) then
-                    return false
+
+                if (a.plusOne < b.plusOne) then
+                    return true;
+                elseif (a.plusOne > b.plusOne) then
+                    return false;
                 else
-                    return a.roll > b.roll
+
+                    if (a.bid > b.bid) then
+                        return true
+                    elseif (a.bid < b.bid) then
+                        return false
+                    else
+                        return a.roll > b.roll
+                    end
+
                 end
+
             end
         end)
 
         local bidsString = "";
         for k, v in pairs(bids) do
             bidsString = bidsString ..
-                             (string.format("%d - %s bid %d points (%d) as %s\n", k, v.name, v.bid, v.roll,
-                    DOHGlobals.BIDTYPES[v.bidType]))
+                             (string.format("%d - %s bid %d points (%d) [%d] as %s\n", k, v.name, v.bid, v.roll,
+                    v.plusOne, DOHGlobals.BIDTYPES[v.bidType]))
         end
 
         scrollContent:SetText(bidsString);
@@ -469,6 +517,7 @@ end
 IncomingBidsWindow = CreateIncomingBidsWindow()
 
 function CreateMasterLooterWindow()
+    local frameWidth = 300;
     f = AceGUI:Create("Window")
     f:SetCallback("OnClose", function(widget)
         f:Hide()
@@ -476,9 +525,9 @@ function CreateMasterLooterWindow()
     f:SetTitle("DoH Master looter")
     f:SetLayout("Flow")
     f:EnableResize(false)
-    f:SetWidth(300)
+    f:SetWidth(frameWidth)
     f:SetHeight(150)
-    --  f:Hide()
+    f:Hide()
 
     local awardRaidPointsButton = AceGUI:Create("Button");
     awardRaidPointsButton:SetFullWidth(true);
@@ -489,9 +538,133 @@ function CreateMasterLooterWindow()
             data.state = DOHGlobals.UPDATE.WRITE;
         end
         DanesOfHonor:ProcessRoster()
-        SendChatMessage(string.format("%s awarded %d points to raid!", UnitName("PLAYER"), DOHGlobals.MINIMUMBID));
+        SendChatMessage(string.format("%s awarded %d points to raid!", UnitName("PLAYER"), DOHGlobals.MINIMUMBID),
+            "RAID");
     end)
     f:AddChild(awardRaidPointsButton);
+
+    local toggleDualSpecButton = AceGUI:Create("Button");
+    toggleDualSpecButton:SetFullWidth(true);
+    toggleDualSpecButton:SetText("Toggle dual spec for target")
+    toggleDualSpecButton:SetCallback("OnClick", function()
+        local dsName = UnitName("TARGET")
+        if (dsName) then
+            if (DOHGADB.DUALSPEC[dsName]) then
+                DOHGADB.DUALSPEC[dsName] = false;
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("%s was removed from the allow dual spec list!", dsName));
+            else
+                DOHGADB.DUALSPEC[dsName] = true;
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("%s was added to the allow dual spec list!", dsName));
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000DOHGA|r Select a target to toggle allow Dual spec!")
+        end
+    end)
+    f:AddChild(toggleDualSpecButton);
+
+    local subtractBidButton = AceGUI:Create("Button");
+    subtractBidButton:SetFullWidth(true);
+    subtractBidButton:SetText("Subtract points from target")
+    subtractBidButton:SetCallback("OnClick", function()
+        local dsName = UnitName("TARGET")
+        if (dsName) then
+            if (DOHGADB.ROSTER[dsName]) then
+                local oldP = DOHGADB.ROSTER[dsName].points;
+                local newP = oldP - 100;
+                DOHGADB.ROSTER[dsName].points = newP;
+                DOHGADB.ROSTER[dsName].state = DOHGlobals.UPDATE.WRITE;
+
+                SendChatMessage(string.format("%s updated %s points from %d to %d!", UnitName("PLAYER"), dsName, oldP,
+                    newP), "RAID");
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000DOHGA|r Select a target to subtrach points!")
+        end
+    end)
+    f:AddChild(subtractBidButton);
+
+    local buttonWidth = math.floor(frameWidth / 3);
+
+    local addPlusOneButton = AceGUI:Create("Button");
+    addPlusOneButton:SetWidth(buttonWidth);
+    addPlusOneButton:SetText("Add 1")
+    addPlusOneButton:SetCallback("OnClick", function()
+        local dsName = UnitName("TARGET")
+        if (dsName) then
+            if (DOHGADB.ROSTER[dsName]) then
+                DOHGADB.ROSTER[dsName].plusOne = DOHGADB.ROSTER[dsName].plusOne + 1
+                SendChatMessage(string.format("%s added +1 to %s!", UnitName("PLAYER"), dsName), "RAID");
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000DOHGA|r Select a target to add +1 to!")
+        end
+    end)
+    f:AddChild(addPlusOneButton);
+
+    local subtractPlusOneButton = AceGUI:Create("Button");
+    subtractPlusOneButton:SetWidth(buttonWidth);
+    subtractPlusOneButton:SetText("Subtract 1")
+    subtractPlusOneButton:SetCallback("OnClick", function()
+        local dsName = UnitName("TARGET")
+        if (dsName) then
+            if (DOHGADB.ROSTER[dsName]) then
+                DOHGADB.ROSTER[dsName].plusOne = DOHGADB.ROSTER[dsName].plusOne - 1
+                SendChatMessage(string.format("%s subtracted 1 to %s!", UnitName("PLAYER"), dsName), "RAID");
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000DOHGA|r Select a target to subtract 1 from!")
+        end
+    end)
+    f:AddChild(subtractPlusOneButton);
     return f;
 end
+
 MasterLooterWindow = CreateMasterLooterWindow()
+-- /script DanesOfHonor:ResetPoints()
+function DanesOfHonor:ResetPoints()
+    local normalizedRealm = "-" .. GetNormalizedRealmName();
+    local numTotalGuildMembers = GetNumGuildMembers();
+    for i = 1, numTotalGuildMembers do
+        GuildRosterSetOfficerNote(i, 0);
+    end
+    DOHGADB.ROSTER = {};
+    DanesOfHonor:GROUP_ROSTER_UPDATE(nil);
+end
+
+-- /script DanesOfHonor:BackupPoints()
+function DanesOfHonor:BackupPoints()
+    local backup = {};
+    local normalizedRealm = "-" .. GetNormalizedRealmName();
+    local numTotalGuildMembers = GetNumGuildMembers();
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "");
+            backup[n] = tonumber(officernote);
+        end
+    end
+
+    DOHGADB.Backup = backup;
+    print("Backed up guild roster points.");
+end
+
+-- /script DanesOfHonor:RestorePoints()
+function DanesOfHonor:RestorePoints()
+    if (not DOHGADB.Backup) then
+        return;
+    end
+
+    local normalizedRealm = "-" .. GetNormalizedRealmName();
+    local numTotalGuildMembers = GetNumGuildMembers();
+    for i = 1, numTotalGuildMembers do
+        local name, rank, rankIndex, level, class, zone, note, officernote = GetGuildRosterInfo(i);
+        if (name) then
+            local n = name:gsub(normalizedRealm, "");
+            if (DOHGADB.Backup[n]) then
+                GuildRosterSetOfficerNote(i, DOHGADB.Backup[n])
+            end
+        end
+    end
+    print("Restored guild roster points from backup.");
+end
+
