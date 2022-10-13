@@ -7,6 +7,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 DOHGlobals = {
     COMMPREFIX = "DOHGA",
     AUCTIONINPROGRESS = false,
+    RAIDAWARDPOINTS = 150,
     MINIMUMBID = 100,
     BIDTIMER = 20,
     ADDPLUSONE = true,
@@ -736,12 +737,11 @@ function CreateMasterLooterWindow()
     awardRaidPointsButton:SetText(string.format("Award %d points to raid", DOHGlobals.MINIMUMBID))
     awardRaidPointsButton:SetCallback("OnClick", function()
         for name, data in pairs(DOHGADB.ROSTER) do
-            data.points = data.points + DOHGlobals.MINIMUMBID;
+            data.points = data.points + DOHGlobals.RAIDAWARDPOINTS;
             data.state = DOHGlobals.UPDATE.WRITE;
         end
         DanesOfHonor:ProcessRoster()
-        SendChatMessage(string.format("%s awarded %d points to raid!", UnitName("PLAYER"), DOHGlobals.MINIMUMBID),
-            "RAID");
+        SendChatMessage(string.format("Awarded %d points to raid!", DOHGlobals.RAIDAWARDPOINTS), "RAID");
     end)
     f:AddChild(awardRaidPointsButton);
 
@@ -914,18 +914,6 @@ function DanesOfHonor:AddTestBid()
     end
 
     IncomingBidsWindow.AddBid(name, bidType, bid, roll);
-
-    local testBid = {
-        name = name,
-        bid = bid,
-        roll = roll,
-        plusOne = 0,
-        bidType = bidType,
-        item = "itemLinkOnAuction"
-    };
-
-    --  AwardLootWindow.AwardLoot(testBid);
-
 end
 
 -- /script DanesOfHonor:LoadPointsFromGuildRoster()
