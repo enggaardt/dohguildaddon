@@ -24,6 +24,9 @@ Libs\AceComm-3.0\AceComm-3.0.xml
 Libs\AceTab-3.0\AceTab-3.0.xml
 Libs\AceSerializer-3.0\AceSerializer-3.0.xml
 
+Libs\LibStub\LibStub.lua
+Libs\lib-st\lib-st.xml
+
 # Utils
 # Utils\B64Encoder.lua
 Utils\Utils.lua
