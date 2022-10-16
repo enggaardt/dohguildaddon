@@ -1,5 +1,12 @@
--- To get detailed error messages ingame 
--- /console scriptErrors 1
+--[[
+  To get detailed error messages ingame 
+  /console scriptErrors 1
+
+  Der skal laves check på at man ikek kan starte en ny auction før den nuværende er færdig
+  Man skal ikke kunne award et item før timer er løbt ud
+  Set timer ned til 15 sekunder?
+]]
+
 DanesOfHonor = LibStub("AceAddon-3.0"):NewAddon("DanesOfHonor", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0",
     "AceTimer-3.0")
 local AceGUI = LibStub("AceGUI-3.0")
@@ -10,6 +17,7 @@ DOHGlobals = {
     RAIDAWARDPOINTS = 150,
     MINIMUMBID = 100,
     BIDTIMER = 20,
+    GRTIMER = 300,
     ADDPLUSONE = true,
     BIDTYPES = {
         HALF = 5,
@@ -101,6 +109,8 @@ DOHGlobals = {
     }
 }
 
+local grTimerID = nil;
+
 function DanesOfHonor:OnInitialize()
     if not (DOHGADB) then
         DOHGADB = {}
@@ -118,12 +128,16 @@ function DanesOfHonor:OnInitialize()
     DanesOfHonor:RegisterEvent("RAID_ROSTER_UPDATE")
     DanesOfHonor:RegisterEvent("GROUP_ROSTER_UPDATE")
     DanesOfHonor:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
-    DanesOfHonor:RegisterEvent("PLAYER_LOGOUT")
+
+    grTimerID = DanesOfHonor:ScheduleRepeatingTimer(function()
+        DanesOfHonor:SaveGuildRoster();
+    end, DOHGlobals.GRTIMER);
 
     DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000Danes|r |cAAFFFFFFof|r |cAAFF0000Honor|r guild addon loaded!")
 end
 
-function DanesOfHonor:PLAYER_LOGOUT(...)
+function DanesOfHonor:SaveGuildRoster()
+--    DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r Saving guild roster!")
     local guildRoster = {};
     local normalizedRealm = "-" .. GetNormalizedRealmName();
     local numTotalGuildMembers = GetNumGuildMembers();
@@ -262,7 +276,7 @@ function DanesOfHonor:HandleChatCommand(input)
         end
     elseif (command == "reset") then
         if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
-            DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "reset 1", "RAID")
+            DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "reset", "RAID")
         end
     end
 end
@@ -524,6 +538,8 @@ function CreateAwardLootWindow()
             if (DOHGlobals.ADDPLUSONE and bid.bidType == DOHGlobals.BIDTYPES.MAINSPEC) then
                 DOHGADB.ROSTER[bid.name].plusOne = DOHGADB.ROSTER[bid.name].plusOne + 1;
             end
+
+            SendChatMessage(string.format("%s was awarded to %s!", bid.item, bid.name), "RAID");
             DanesOfHonor:ProcessRoster();
             DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "processRoster read " .. bid.name, "RAID")
         else
@@ -637,9 +653,6 @@ function CreateIncomingBidsWindow()
     Table.frame:SetPoint("TOP", itemContainer.frame, "BOTTOM", 0, -20);
     Table:RegisterEvents({
         ["OnClick"] = function(rowFrame, cellFrame, data, cols, row, realrow, column, scrollingTable, ...)
-
-            printTable("data[realrow]", data[realrow]);
-            printTable("data[realrow].cols[1]", data[realrow].cols[1]);
             local dataRow = data[realrow].cols;
             local bid = {
                 name = dataRow[1].value,
@@ -649,7 +662,6 @@ function CreateIncomingBidsWindow()
                 bidType = DOHGlobals.BIDTYPES[dataRow[5].value],
                 item = itemLinkOnAuction
             };
-            printTable("bid", bid);
             AwardLootWindow.AwardLoot(bid);
         end
     });
@@ -730,11 +742,11 @@ function CreateMasterLooterWindow()
     f:EnableResize(false)
     f:SetWidth(300)
     f:SetHeight(150)
-    --  f:Hide()
+    f:Hide()
 
     local awardRaidPointsButton = AceGUI:Create("Button");
     awardRaidPointsButton:SetFullWidth(true);
-    awardRaidPointsButton:SetText(string.format("Award %d points to raid", DOHGlobals.MINIMUMBID))
+    awardRaidPointsButton:SetText(string.format("Award %d points to raid", DOHGlobals.RAIDAWARDPOINTS))
     awardRaidPointsButton:SetCallback("OnClick", function()
         for name, data in pairs(DOHGADB.ROSTER) do
             data.points = data.points + DOHGlobals.RAIDAWARDPOINTS;
@@ -839,7 +851,7 @@ function CreateMasterLooterWindow()
         DanesOfHonor:AddTestBid();
     end)
     f:AddChild(addTestBidbutton);
-    f:Hide();
+
     return f;
 end
 MasterLooterWindow = CreateMasterLooterWindow()
