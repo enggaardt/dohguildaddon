@@ -1,11 +1,14 @@
 --[[
   To get detailed error messages ingame 
-  /console scriptErrors 1
+/console scriptErrors 1
+/console scriptErrors 0
 
   Der skal laves check på at man ikek kan starte en ny auction før den nuværende er færdig
   Man skal ikke kunne award et item før timer er løbt ud
   Set timer ned til 15 sekunder?
 ]]
+
+local _, DOHGA = ...;
 
 DanesOfHonor = LibStub("AceAddon-3.0"):NewAddon("DanesOfHonor", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0",
     "AceTimer-3.0")
@@ -16,7 +19,7 @@ DOHGlobals = {
     AUCTIONINPROGRESS = false,
     RAIDAWARDPOINTS = 150,
     MINIMUMBID = 100,
-    BIDTIMER = 20,
+    BIDTIMER = 15,
     GRTIMER = 300,
     ADDPLUSONE = true,
     BIDTYPES = {
@@ -122,6 +125,8 @@ function DanesOfHonor:OnInitialize()
         DOHGADB.DUALSPEC = {}
     end
 
+    --   DOHGA.GuildService:GetPointsFromGuildRoster(nil);
+
     DanesOfHonor:RegisterComm(DOHGlobals.COMMPREFIX)
     DanesOfHonor:RegisterChatCommand('doh', 'HandleChatCommand')
     DanesOfHonor:RegisterEvent("CHAT_MSG_SYSTEM")
@@ -137,7 +142,7 @@ function DanesOfHonor:OnInitialize()
 end
 
 function DanesOfHonor:SaveGuildRoster()
---    DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r Saving guild roster!")
+    --    DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r Saving guild roster!")
     local guildRoster = {};
     local normalizedRealm = "-" .. GetNormalizedRealmName();
     local numTotalGuildMembers = GetNumGuildMembers();
@@ -237,10 +242,19 @@ function DanesOfHonor:HandleChatCommand(input)
     local command = string.lower(FixNil(DanesOfHonor:GetArgs(input)))
     if (command == "auction") then
         if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+            if (DOHGlobals.AUCTIONINPROGRESS) then
+                DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: There is already an active auction!")
+                return;
+            end
             local _, itemLink = DanesOfHonor:GetArgs(input, 2);
             if (itemLink) then
                 DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
                 SendChatMessage(string.format("An auction started for %s!", itemLink), "RAID_WARNING")
+                SendChatMessage("* To bid half your points: /doh bid half", "RAID")
+                SendChatMessage(string.format("* To bid %d points: /roll 100", DOHGlobals.MINIMUMBID), "RAID")
+                SendChatMessage("* To roll for Main spec +1: /roll 99", "RAID")
+                SendChatMessage("* To roll for Dual spec: /roll 98", "RAID")
+                SendChatMessage("* To roll for Off spec /roll 97", "RAID")
             else
                 DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
             end
@@ -267,16 +281,20 @@ function DanesOfHonor:HandleChatCommand(input)
             DanesOfHonor:PrintRollHelp()
         end
     elseif (command == "ml") then
-        if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+        if (DOHGADB.ROSTER[UnitName("PLAYER")] and DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
             if (MasterLooterWindow:IsVisible()) then
                 MasterLooterWindow:Hide();
             else
                 MasterLooterWindow:Show();
             end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("You must be in a raid and be the master looter to use this command!");
         end
     elseif (command == "reset") then
-        if (DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
-            DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "reset", "RAID")
+        if (DOHGADB.ROSTER[UnitName("PLAYER")] and DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
+            DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "reset 1", "RAID")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("You must be in a raid and be the master looter to use this command!");
         end
     end
 end
@@ -297,7 +315,7 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
                             mlTimeLeft = mlTimeLeft - 1
                             if (mlTimeLeft <= 0) then
                                 DanesOfHonor:CancelTimer(mlTimerID)
-                                SendChatMessage(string.format("Auction for %s ended!", arg1, mlTimeLeft), "RAID");
+                     as           SendChatMessage(string.format("Auction for %s ended!", arg1, mlTimeLeft), "RAID");
                             elseif (mlTimeLeft <= 5) then
                                 SendChatMessage(string.format("Auction for %s ends in %d seconds!", arg1, mlTimeLeft),
                                     "RAID");
@@ -928,7 +946,7 @@ function DanesOfHonor:AddTestBid()
     IncomingBidsWindow.AddBid(name, bidType, bid, roll);
 end
 
--- /script DanesOfHonor:LoadPointsFromGuildRoster()
+-- /script DanesOfHonor:LoadPointsFromGuildRoster(1)
 function DanesOfHonor:LoadPointsFromGuildRoster(resetRoster)
     if (resetRoster) then
         DOHGADB.ROSTER = {};

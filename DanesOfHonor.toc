@@ -32,4 +32,5 @@ Libs\lib-st\lib-st.xml
 Utils\Utils.lua
 
 # Addon Core
+# Services\GuildService.lua
 DanesOfHonor.lua
