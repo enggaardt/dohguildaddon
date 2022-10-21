@@ -3,9 +3,9 @@
 /console scriptErrors 1
 /console scriptErrors 0
 
-  Der skal laves check på at man ikek kan starte en ny auction før den nuværende er færdig
-  Man skal ikke kunne award et item før timer er løbt ud
-  Set timer ned til 15 sekunder?
+Man skal ikke kunne award et item før timer er løbt ud
+*  Der skal laves check på at man ikek kan starte en ny auction før den nuværende er færdig
+*  Set timer ned til 15 sekunder?
 ]]
 
 local _, DOHGA = ...;
@@ -124,6 +124,9 @@ function DanesOfHonor:OnInitialize()
     if (not DOHGADB.DUALSPEC) then
         DOHGADB.DUALSPEC = {}
     end
+
+
+    
 
     --   DOHGA.GuildService:GetPointsFromGuildRoster(nil);
 
@@ -315,7 +318,7 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
                             mlTimeLeft = mlTimeLeft - 1
                             if (mlTimeLeft <= 0) then
                                 DanesOfHonor:CancelTimer(mlTimerID)
-                     as           SendChatMessage(string.format("Auction for %s ended!", arg1, mlTimeLeft), "RAID");
+                                SendChatMessage(string.format("Auction for %s ended!", arg1, mlTimeLeft), "RAID");
                             elseif (mlTimeLeft <= 5) then
                                 SendChatMessage(string.format("Auction for %s ends in %d seconds!", arg1, mlTimeLeft),
                                     "RAID");

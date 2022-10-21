@@ -1,13 +1,14 @@
 local _, DOHGA = ...;
 
----@class GuildService
-DOHGA.GuildService = {};
+DOHGA.Services = DOHGA.Services or {};
 
-GuildService = DOHGA.GuildService;
+---@class GuildService
+DOHGA.Services.PointService = {};
+PointService = DOHGA.Services.PointService;
 
 ---@param members table|nil
 ---@return table
-function GuildService:GetPointsFromGuildRoster(members)
+function PointService:GetPoints(members)
     local getAll = false;
     if (~members) then
         getAll = true;
@@ -41,7 +42,7 @@ end
 
 ---@param members table
 ---@return nil
-function GuildService:SetPointsToGuildRoster(members)
+function PointService:SetPoints(members)
     if (~members) then
         return;
     end
