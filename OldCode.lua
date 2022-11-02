@@ -1,3 +1,33 @@
+function DanesOfHonor:HandleRoll(name, roll, min, max)
+    if (not DOHGlobals.AUCTIONINPROGRESS) then
+        return
+    end
+
+    if (min ~= 1) then
+        DanesOfHonor:PrintRollHelp()
+        return
+    end
+
+    local bidType = DOHGlobals.BIDTYPES.OFFSPEC
+    local bid = 0;
+    if (max == 100) then
+        local currentPoints = DOHGADB.ROSTER[name].points
+        if (currentPoints >= DOHGlobals.MINIMUMBID) then
+            IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.FIXED, DOHGlobals.MINIMUMBID, roll)
+        else
+            DanesOfHonor:PrintRollHelp()
+        end
+    elseif (max == 99) then
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.MAINSPEC, 0, roll)
+    elseif (max == 98) then
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.DUALSPEC, 0, roll)
+    elseif (max == 97) then
+        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.OFFSPEC, 0, roll)
+    else
+        DanesOfHonor:PrintRollHelp()
+    end
+end
+
 table.sort(RecievedBids, function(a, b)
     if (a.bidType < b.bidType) then
         return true

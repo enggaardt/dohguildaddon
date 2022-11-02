@@ -5,16 +5,15 @@
 
 Man skal ikke kunne award et item før timer er løbt ud
 *  Der skal laves check på at man ikek kan starte en ny auction før den nuværende er færdig
-*  Set timer ned til 15 sekunder?
-]]
-
-local _, DOHGA = ...;
+]] local _, DOHGA = ...;
 
 DanesOfHonor = LibStub("AceAddon-3.0"):NewAddon("DanesOfHonor", "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0",
     "AceTimer-3.0")
 local AceGUI = LibStub("AceGUI-3.0")
 
 DOHGlobals = {
+    ANNOUNCEBIDSCOUNT = 5,
+    DEBUGENABLED = true,
     COMMPREFIX = "DOHGA",
     AUCTIONINPROGRESS = false,
     RAIDAWARDPOINTS = 150,
@@ -124,9 +123,6 @@ function DanesOfHonor:OnInitialize()
     if (not DOHGADB.DUALSPEC) then
         DOHGADB.DUALSPEC = {}
     end
-
-
-    
 
     --   DOHGA.GuildService:GetPointsFromGuildRoster(nil);
 
@@ -253,35 +249,11 @@ function DanesOfHonor:HandleChatCommand(input)
             if (itemLink) then
                 DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction start " .. itemLink, "RAID")
                 SendChatMessage(string.format("An auction started for %s!", itemLink), "RAID_WARNING")
-                SendChatMessage("* To bid half your points: /doh bid half", "RAID")
-                SendChatMessage(string.format("* To bid %d points: /roll 100", DOHGlobals.MINIMUMBID), "RAID")
-                SendChatMessage("* To roll for Main spec +1: /roll 99", "RAID")
-                SendChatMessage("* To roll for Dual spec: /roll 98", "RAID")
-                SendChatMessage("* To roll for Off spec /roll 97", "RAID")
             else
                 DEFAULT_CHAT_FRAME:AddMessage("Command |cAAFF0000/doh auction|r is missing item link parameter!")
             end
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: Only the master looter can start an auction!")
-        end
-    elseif (command == "bid") then
-        if (not DOHGlobals.AUCTIONINPROGRESS) then
-            DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: There are no active auctions!")
-            return
-        end
-
-        local _, value = DanesOfHonor:GetArgs(input, 2);
-        if (value == "half") then
-            local currentPoints = DOHGADB.ROSTER[UnitName("PLAYER")].points
-            local halfPoints = math.ceil(currentPoints / 2)
-            if (halfPoints > DOHGlobals.MINIMUMBID) then
-                DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction bid half", "RAID")
-                BidWindow:Hide()
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("|cAAFF0000DOHGA|r: You do not have enough points for this bid!")
-            end
-        else
-            DanesOfHonor:PrintRollHelp()
         end
     elseif (command == "ml") then
         if (DOHGADB.ROSTER[UnitName("PLAYER")] and DOHGADB.ROSTER[UnitName("PLAYER")].isML) then
@@ -319,6 +291,7 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
                             if (mlTimeLeft <= 0) then
                                 DanesOfHonor:CancelTimer(mlTimerID)
                                 SendChatMessage(string.format("Auction for %s ended!", arg1, mlTimeLeft), "RAID");
+                                IncomingBidsWindow.AnnounceBids();
                             elseif (mlTimeLeft <= 5) then
                                 SendChatMessage(string.format("Auction for %s ends in %d seconds!", arg1, mlTimeLeft),
                                     "RAID");
@@ -328,13 +301,7 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
                     end
                 end
             elseif (command == "bid") then
-                if (arg1 == "half") then
-                    local currentPoints = DOHGADB.ROSTER[sender].points
-                    local halfPoints = math.ceil(currentPoints / 2)
-                    if (halfPoints > DOHGlobals.MINIMUMBID) then
-                        IncomingBidsWindow.AddBid(sender, DOHGlobals.BIDTYPES.HALF, halfPoints, 0)
-                    end
-                end
+                DanesOfHonor:HandleBid(sender, tonumber(arg1));
             end
         elseif (action == "dualspec") then
 
@@ -359,34 +326,43 @@ function DanesOfHonor:OnCommReceived(prefix, text, distribution, sender, e)
     end
 end
 
-function DanesOfHonor:HandleRoll(name, roll, min, max)
+function DanesOfHonor:Debug(message)
+    if (DOHGlobals.DEBUGENABLED) then
+        DEFAULT_CHAT_FRAME:AddMessage("DOHGA DEBUG: " .. message);
+    end
+end
+
+function DanesOfHonor:HandleBid(name, bidType)
     if (not DOHGlobals.AUCTIONINPROGRESS) then
-        return
+        DanesOfHonor:Debug(string.format("%s bid recieved from %s while no auction is in progress",
+            DOHGlobals.BIDTYPES[bidType], name));
+        return;
     end
 
-    if (min ~= 1) then
-        DanesOfHonor:PrintRollHelp()
-        return
+    if (not DOHGlobals.BIDTYPES[bidType]) then
+        DanesOfHonor:Debug(string.format("Invalid bid recieved from %s", name));
+        return;
     end
 
-    local bidType = DOHGlobals.BIDTYPES.OFFSPEC
-    local bid = 0;
-    if (max == 100) then
-        local currentPoints = DOHGADB.ROSTER[name].points
-        if (currentPoints >= DOHGlobals.MINIMUMBID) then
-            IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.FIXED, DOHGlobals.MINIMUMBID, roll)
-        else
-            DanesOfHonor:PrintRollHelp()
+    local totalPoints = DOHGADB.ROSTER[name].points;
+    local roll = math.random(1, 999);
+    local points = 0;
+
+    if (bidType == DOHGlobals.BIDTYPES.HALF) then
+        points = math.ceil(totalPoints / 2)
+        if (points <= DOHGlobals.MINIMUMBID) then
+            DanesOfHonor:Debug(string.format("%s does not have enough points to bid half", name));
+            return;
         end
-    elseif (max == 99) then
-        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.MAINSPEC, 0, roll)
-    elseif (max == 98) then
-        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.DUALSPEC, 0, roll)
-    elseif (max == 97) then
-        IncomingBidsWindow.AddBid(name, DOHGlobals.BIDTYPES.OFFSPEC, 0, roll)
-    else
-        DanesOfHonor:PrintRollHelp()
+    elseif (bidType == DOHGlobals.BIDTYPES.FIXED) then
+        points = 100;
+        if (totalPoints < DOHGlobals.MINIMUMBID) then
+            DanesOfHonor:Debug(string.format("%s does not have enough points to bid minimum bid", name));
+            return;
+        end
     end
+
+    IncomingBidsWindow.AddBid(name, bidType, points, roll);
 end
 
 function DanesOfHonor:AjustPoints(memberName, numberOfPoints)
@@ -442,7 +418,8 @@ function CreateBidWindow()
     halfBidButton:SetWidth(buttonWidth)
     halfBidButton:SetHeight(buttonHeight)
     halfBidButton:SetCallback("OnClick", function()
-        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, "auction bid half", "RAID")
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, string.format("auction bid %s", DOHGlobals.BIDTYPES.HALF),
+            "RAID");
         BidWindow:Hide()
     end)
 
@@ -450,7 +427,8 @@ function CreateBidWindow()
     minimumBidButton:SetWidth(buttonWidth)
     minimumBidButton:SetHeight(buttonHeight)
     minimumBidButton:SetCallback("OnClick", function()
-        RandomRoll(1, 100)
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX, string.format("auction bid %s", DOHGlobals.BIDTYPES.FIXED),
+            "RAID");
         BidWindow:Hide()
     end)
 
@@ -459,7 +437,8 @@ function CreateBidWindow()
     mainSpecButton:SetHeight(buttonHeight)
     mainSpecButton:SetText("Main Spec")
     mainSpecButton:SetCallback("OnClick", function()
-        RandomRoll(1, 99)
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX,
+            string.format("auction bid %s", DOHGlobals.BIDTYPES.MAINSPEC), "RAID");
         BidWindow:Hide()
     end)
 
@@ -468,7 +447,8 @@ function CreateBidWindow()
     dualSpecButton:SetHeight(buttonHeight)
     dualSpecButton:SetText("Dual Spec")
     dualSpecButton:SetCallback("OnClick", function()
-        RandomRoll(1, 98)
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX,
+            string.format("auction bid %s", DOHGlobals.BIDTYPES.DUALSPEC), "RAID");
         BidWindow:Hide()
     end)
 
@@ -477,7 +457,8 @@ function CreateBidWindow()
     offSpecButton:SetHeight(buttonHeight)
     offSpecButton:SetText("Off Spec")
     offSpecButton:SetCallback("OnClick", function()
-        RandomRoll(1, 97)
+        DanesOfHonor:SendCommMessage(DOHGlobals.COMMPREFIX,
+            string.format("auction bid %s", DOHGlobals.BIDTYPES.OFFSPEC), "RAID");
         BidWindow:Hide()
     end)
 
@@ -706,7 +687,7 @@ function CreateIncomingBidsWindow()
 
     f.AddBid = function(name, bidType, bid, roll)
         if (bidders[name]) then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format(" - %s already placed a bid", name));
+            DanesOfHonor:Debug(string.format(" - %s already placed a bid", name));
             return
         end
 
@@ -718,7 +699,7 @@ function CreateIncomingBidsWindow()
             plusOneSorter = plusOneSorter - plusOne;
         end
 
-        local sortOrder = string.format("%02d %06d %03d %03d", bidType, bid, plusOneSorter, roll);
+        local sortOrder = string.format("BID_%02d_%06d_%03d_%03d", bidType, bid, plusOneSorter, roll);
         local class = string.lower(DOHGADB.ROSTER[name].class or "unknown");
         local color = DOHGlobals.CLASSRGBACOLORS[class];
 
@@ -743,9 +724,47 @@ function CreateIncomingBidsWindow()
             }}
         };
 
+        print ("Recived bid from " .. name);
         table.insert(bids, row);
         Table:SetData(bids);
         Table:SortData();
+    end
+
+    f.AnnounceBids = function()
+        if (not bids) then
+            DanesOfHonor:Debug("NO BIDS");
+            return;
+        end
+
+--[[        table.sort(bids, function(a, b)
+            print(string.format("Comparing: %s <> %s", a.cols[6].value , b.cols[6].value))
+            if(a.cols[6].value < b.cols[6].value)then
+                return 1;
+            else
+                return -1;
+            end
+        end);
+    ]]
+        local counter = 1;
+        for k, row in pairs(bids) do
+            if (counter > DOHGlobals.ANNOUNCEBIDSCOUNT) then
+                return;
+            end
+
+            local bidFormat = "[%s] %s bid %s for %d points with a %d roll (+%d)";
+            local bidString = string.format(
+                bidFormat, 
+                row.cols[6].value, 
+                row.cols[1].value, 
+                row.cols[5].value, 
+                row.cols[2].value,
+                row.cols[3].value, 
+                row.cols[4].value);
+
+            SendChatMessage(bidString, "RAID");
+
+        end
+
     end
 
     f:Hide();

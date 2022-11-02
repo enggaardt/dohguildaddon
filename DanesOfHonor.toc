@@ -32,10 +32,10 @@ Libs\lib-st\lib-st.xml
 Utils\Utils.lua
 
 # Services
-Services\PointService.lua
+#Services\PointService.lua
 
 # Windows
-Windows\StandingsWindow.lua
+#Windows\StandingsWindow.lua
 
 # Addon Core
 DanesOfHonor.lua
