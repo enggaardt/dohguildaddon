@@ -747,14 +747,23 @@ function CreateIncomingBidsWindow()
         Table:SortData();
 
         table.insert(bids2, bidData);
-        table.sort(bids2, function (k1, k2) return k1.sortIndex > k2.sortIndex end );
+        table.sort(bids2, function(k1, k2)
+            return k1.sortIndex > k2.sortIndex
+        end);
     end
 
     f.AnnounceBids = function()
         if (not bids2) then
             DanesOfHonor:Debug("NO BIDS");
+            SendChatMessage("No bids recieved!", "RAID");
             return;
         end
+
+        local numberOfBids = #bids2;
+        local top = math.min(numberOfBids, DOHGlobals.ANNOUNCEBIDSCOUNT);
+        SendChatMessage("-----------------------", "RAID");
+        SendChatMessage(string.format("Top %d of %d bids!", top, numberOfBids), "RAID");
+        SendChatMessage("-----------------------", "RAID");
 
         local counter = 1;
         for k, bidData in pairs(bids2) do
@@ -770,7 +779,7 @@ function CreateIncomingBidsWindow()
             SendChatMessage(bidString, "RAID");
             counter = counter + 1;
         end
-
+        SendChatMessage("-----------------------", "RAID");
     end
 
     f:Hide();
@@ -954,7 +963,7 @@ function DanesOfHonor:AddTestBid()
     local name = "Name" .. math.floor(GetTime());
     local bidType = math.random(DOHGlobals.BIDTYPES.OFFSPEC, DOHGlobals.BIDTYPES.HALF);
     local bid = 0;
-    local roll =  math.random(1, 999);
+    local roll = math.random(1, 999);
     if (bidType == DOHGlobals.BIDTYPES.HALF) then
         bid = math.random(DOHGlobals.MINIMUMBID * 2 + 1, 9000);
     elseif (bidType == DOHGlobals.BIDTYPES.FIXED) then
